@@ -1,0 +1,4 @@
+CONTRATO DE ARRENDAMIENTO
+
+Este es un contrato de prueba para el sistema de auditoría.
+El hash de este documento debe ser inmutable.

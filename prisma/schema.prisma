@@ -1,0 +1,62 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// 1. Empresas
+model Company {
+  id        String     @id @default(cuid())
+  name      String
+  users     User[]
+  documents Document[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+// 2. Usuarios (Empresa y Auditores)
+model User {
+  id        String     @id @default(cuid())
+  name      String
+  email     String     @unique
+  password  String     @default("") 
+  role      String     @default("COMPANY") // COMPANY, AUDITOR
+  companyId String
+  company   Company    @relation(fields: [companyId], references: [id])
+  documents Document[]
+  auditLogs AuditLog[]
+}
+
+// 3. Documentos
+model Document {
+  id           String     @id @default(cuid())
+  title        String
+  description  String?
+  category     String     @default("General") // Nómina, Recursos Humanos, Producción, Administrativo, General
+  fileUrl      String     // Ruta donde se guardó el archivo
+  currentHash  String     @unique // Hash SHA-256 actual del archivo
+  status       String     @default("UPLOADED") // UPLOADED, MODIFIED, VERIFIED
+  companyId    String
+  company      Company    @relation(fields: [companyId], references: [id])
+  uploaderId   String
+  uploader     User       @relation(fields: [uploaderId], references: [id])
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  history      AuditLog[]
+}
+
+// 4. Historial de Auditoría (Inmutable)
+model AuditLog {
+  id          String   @id @default(cuid())
+  documentId  String
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  action      String   // UPLOADED, NAME_CHANGED, STATUS_UPDATED
+  hashValue   String   // Hash del documento en el momento de esta acción
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  timestamp   DateTime @default(now())
+  details     String?  // Información adicional de la acción
+}
