@@ -2,7 +2,7 @@
 
 import { getSupabaseServerClient } from '@/lib/supabase'
 
-export type VerificationResult = 
+export type VerificationResult =
   | { success: true; document: { title: string; uploaderName: string; createdAt: string; hash: string } }
   | { success: false; error: string }
 
@@ -27,8 +27,8 @@ export async function verifyDocumentHash(hash: string): Promise<VerificationResu
     }
 
     if (!document) {
-      return { 
-        success: false, 
+      return {
+        success: false,
         error: 'El hash no coincide con ningún documento registrado. El archivo puede haber sido alterado o nunca fue subido a la plataforma.'
       }
     }
@@ -38,7 +38,10 @@ export async function verifyDocumentHash(hash: string): Promise<VerificationResu
       success: true,
       document: {
         title: document.title,
-        uploaderName: document.uploader?.name || '',
+        uploaderName: (() => {
+          const uploader = Array.isArray(document.uploader) ? document.uploader[0] : document.uploader
+          return uploader?.name || ''
+        })(),
         createdAt: document.created_at,
         hash: document.current_hash
       }

@@ -36,7 +36,10 @@ export async function GET(req: NextRequest) {
   const pdfElement = React.createElement(CertificatePDF, {
     data: {
       documentTitle: document.title,
-      uploaderName: document.uploader?.name || '',
+      uploaderName: (() => {
+        const uploader = Array.isArray(document.uploader) ? document.uploader[0] : document.uploader
+        return uploader?.name || ''
+      })(),
       hash: document.current_hash,
       createdAt: document.created_at,
       status: document.status,
