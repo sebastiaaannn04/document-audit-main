@@ -26,6 +26,7 @@ type TimelineProps = {
     hashValue: string
     timestamp: Date
     details: string | null
+    fileUrl?: string | null
     user: { name: string, role: string }
   }[]
 }
@@ -97,7 +98,7 @@ export function DocumentCard({
                 {document.title}
               </p>
               <span style={{
-                fontSize: 10, fontWeight: 500, color: '#999', background: 'rgba(255,255,255,0.06)', 
+                fontSize: 10, fontWeight: 500, color: '#999', background: 'rgba(255,255,255,0.06)',
                 padding: '2px 6px', borderRadius: 4, whiteSpace: 'nowrap'
               }}>
                 {document.category}
@@ -255,6 +256,24 @@ export function AuditTimeline({ history }: TimelineProps) {
 
                 {log.details && (
                   <p style={{ fontSize: 13, color: '#666', marginBottom: 10 }}>{log.details}</p>
+                )}
+
+                {log.fileUrl && (
+                  <a
+                    href={log.fileUrl}
+                    download
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                      padding: '6px 10px', borderRadius: 6, fontSize: 12, fontWeight: 500,
+                      color: '#3ECF8E', textDecoration: 'none',
+                      border: '1px solid rgba(62,207,142,0.25)',
+                      background: 'rgba(62,207,142,0.05)',
+                      marginBottom: 10
+                    }}
+                  >
+                    <FileDown size={12} />
+                    Descargar versión
+                  </a>
                 )}
 
                 <div style={{
