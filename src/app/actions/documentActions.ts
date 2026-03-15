@@ -2,8 +2,6 @@
 
 import { revalidatePath } from 'next/cache'
 import crypto from 'crypto'
-import fs from 'fs'
-import path from 'path'
 import { getSupabaseServerClient } from '@/lib/supabase'
 import { verifySession } from '@/lib/session'
 
@@ -35,6 +33,7 @@ type AuditLogRow = {
   hash_value: string
   timestamp: string
   details: string | null
+  file_url?: string | null
   user?: UserRow | UserRow[] | null
 }
 
@@ -63,12 +62,22 @@ const mapAuditLogRow = (row: AuditLogRow) => ({
   hashValue: row.hash_value,
   timestamp: row.timestamp,
   details: row.details,
+  fileUrl: row.file_url ?? null,
   user: (() => {
     const user = Array.isArray(row.user) ? row.user[0] : row.user
     if (!user) return { name: '', role: '', email: '' }
     return { name: user.name, role: user.role, email: user.email }
   })(),
 })
+
+const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'documents'
+
+const getPublicUrl = (supabase: ReturnType<typeof getSupabaseServerClient>, path: string) => {
+  const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path)
+  return data.publicUrl
+}
+
+const sanitizeFilename = (name: string) => name.replace(/[^a-zA-Z0-9._-]/g, '-')
 
 export async function uploadDocument(formData: FormData) {
   try {
@@ -95,17 +104,19 @@ export async function uploadDocument(formData: FormData) {
     hashSum.update(buffer)
     const currentHash = hashSum.digest('hex')
 
-    // 2. Save file to public/uploads
-    const uploadDir = path.join(process.cwd(), 'public', 'uploads')
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true })
-    }
-    const uniqueFilename = `${Date.now()}-${file.name}`
-    const filePath = path.join(uploadDir, uniqueFilename)
-    fs.writeFileSync(filePath, buffer)
+    // 2. Upload file to Supabase Storage
+    const safeName = sanitizeFilename(file.name)
+    const objectPath = `${session.companyId}/${Date.now()}-${crypto.randomUUID()}-${safeName}`
+    const { error: uploadError } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .upload(objectPath, buffer, { contentType: file.type || 'application/octet-stream' })
 
-    // Relative URL for frontend to access optionally (if wanted)
-    const fileUrl = `/uploads/${uniqueFilename}`
+    if (uploadError) {
+      console.error('Error uploading to storage:', uploadError)
+      return { success: false, error: 'Error al subir el archivo a storage.' }
+    }
+
+    const fileUrl = getPublicUrl(supabase, objectPath)
 
     // 4. Create internal Document record and Audit Log transiton
     const { data: document, error: documentError } = await supabase
@@ -135,6 +146,7 @@ export async function uploadDocument(formData: FormData) {
       document_id: document.id,
       action: 'UPLOADED',
       hash_value: currentHash,
+      file_url: fileUrl,
       user_id: session.userId,
       details: 'Documento original registrado',
     })
@@ -193,7 +205,7 @@ export async function getDocumentHistory(documentId: string) {
   const supabase = getSupabaseServerClient()
   const { data, error } = await supabase
     .from('audit_logs')
-    .select('id, action, hash_value, timestamp, details, user:users(name, email, role)')
+    .select('id, action, hash_value, timestamp, details, file_url, user:users(name, email, role)')
     .eq('document_id', documentId)
     .order('timestamp', { ascending: false })
 
@@ -246,12 +258,19 @@ export async function uploadNewVersion(documentId: string, formData: FormData) {
       return { success: false, error: 'Este archivo es idéntico a la versión actual. El Hash no ha cambiado.' }
     }
 
-    // 3. Save new file
-    const uploadDir = path.join(process.cwd(), 'public', 'uploads')
-    const uniqueFilename = `${Date.now()}-v2-${file.name}`
-    const filePath = path.join(uploadDir, uniqueFilename)
-    fs.writeFileSync(filePath, buffer)
-    const fileUrl = `/uploads/${uniqueFilename}`
+    // 3. Upload new file version to Supabase Storage
+    const safeName = sanitizeFilename(file.name)
+    const objectPath = `${session.companyId}/${Date.now()}-${crypto.randomUUID()}-${safeName}`
+    const { error: uploadError } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .upload(objectPath, buffer, { contentType: file.type || 'application/octet-stream' })
+
+    if (uploadError) {
+      console.error('Error uploading to storage:', uploadError)
+      return { success: false, error: 'Error al subir el archivo a storage.' }
+    }
+
+    const fileUrl = getPublicUrl(supabase, objectPath)
 
     // 4. Update Database within a Transaction
     const { data: updatedDocument, error: updatedDocumentError } = await supabase
@@ -278,6 +297,7 @@ export async function uploadNewVersion(documentId: string, formData: FormData) {
       document_id: updatedDocument.id,
       action: 'VERSION_UPDATED',
       hash_value: newHash,
+      file_url: fileUrl,
       user_id: session.userId,
       details: 'Se actualizó a una nueva versión del archivo original',
     })
