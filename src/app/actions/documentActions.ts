@@ -8,9 +8,9 @@ import { getSupabaseServerClient } from '@/lib/supabase'
 import { verifySession } from '@/lib/session'
 
 type UserRow = {
-  id: string
+  id?: string
   name: string
-  email: string
+  email?: string
   role: string
 }
 
@@ -26,7 +26,7 @@ type DocumentRow = {
   uploader_id: string
   created_at: string
   updated_at: string
-  uploader?: UserRow | null
+  uploader?: UserRow | UserRow[] | null
 }
 
 type AuditLogRow = {
@@ -35,7 +35,7 @@ type AuditLogRow = {
   hash_value: string
   timestamp: string
   details: string | null
-  user?: UserRow | null
+  user?: UserRow | UserRow[] | null
 }
 
 const mapDocumentRow = (row: DocumentRow) => ({
@@ -50,7 +50,11 @@ const mapDocumentRow = (row: DocumentRow) => ({
   uploaderId: row.uploader_id,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
-  uploader: row.uploader ? { name: row.uploader.name, email: row.uploader.email, role: row.uploader.role } : undefined,
+  uploader: (() => {
+    const uploader = Array.isArray(row.uploader) ? row.uploader[0] : row.uploader
+    if (!uploader) return undefined
+    return { name: uploader.name, email: uploader.email, role: uploader.role }
+  })(),
 })
 
 const mapAuditLogRow = (row: AuditLogRow) => ({
@@ -59,7 +63,11 @@ const mapAuditLogRow = (row: AuditLogRow) => ({
   hashValue: row.hash_value,
   timestamp: row.timestamp,
   details: row.details,
-  user: row.user ? { name: row.user.name, role: row.user.role } : { name: '', role: '' },
+  user: (() => {
+    const user = Array.isArray(row.user) ? row.user[0] : row.user
+    if (!user) return { name: '', role: '', email: '' }
+    return { name: user.name, role: user.role, email: user.email }
+  })(),
 })
 
 export async function uploadDocument(formData: FormData) {
@@ -95,7 +103,7 @@ export async function uploadDocument(formData: FormData) {
     const uniqueFilename = `${Date.now()}-${file.name}`
     const filePath = path.join(uploadDir, uniqueFilename)
     fs.writeFileSync(filePath, buffer)
-    
+
     // Relative URL for frontend to access optionally (if wanted)
     const fileUrl = `/uploads/${uniqueFilename}`
 
@@ -146,7 +154,7 @@ export async function uploadDocument(formData: FormData) {
 
 export async function getDocuments() {
   const session = await verifySession()
-  
+
   if (!session) return []
 
   const supabase = getSupabaseServerClient()
@@ -155,7 +163,7 @@ export async function getDocuments() {
   if (session.role === 'COMPANY') {
     const { data, error } = await supabase
       .from('documents')
-      .select('id, title, description, category, file_url, current_hash, status, company_id, uploader_id, created_at, updated_at, uploader:users(name, email, role)')
+      .select('id, title, description, category, file_url, current_hash, status, company_id, uploader_id, created_at, updated_at, uploader:users(id, name, email, role)')
       .eq('company_id', session.companyId)
       .order('created_at', { ascending: false })
 
@@ -170,7 +178,7 @@ export async function getDocuments() {
   // If AUDITOR, show all documents cross-companies
   const { data, error } = await supabase
     .from('documents')
-    .select('id, title, description, category, file_url, current_hash, status, company_id, uploader_id, created_at, updated_at, uploader:users(name, email, role)')
+    .select('id, title, description, category, file_url, current_hash, status, company_id, uploader_id, created_at, updated_at, uploader:users(id, name, email, role)')
     .order('created_at', { ascending: false })
 
   if (error || !data) {
@@ -185,7 +193,7 @@ export async function getDocumentHistory(documentId: string) {
   const supabase = getSupabaseServerClient()
   const { data, error } = await supabase
     .from('audit_logs')
-    .select('id, action, hash_value, timestamp, details, user:users(name, role)')
+    .select('id, action, hash_value, timestamp, details, user:users(name, email, role)')
     .eq('document_id', documentId)
     .order('timestamp', { ascending: false })
 
